@@ -251,6 +251,15 @@ module Script =                     // The script module allows for incremental 
         if (syn1 && syn2 && not(syn3)) then
             corr [qs.[0]]
 
+    // correct for X and Z errors in Steane's code
+    let errorCorrection (qs:Qubits) (syns:List<bool>) =
+        // correct for Z errors
+        let zsyns = syns.[0 .. 2]
+        singleErrorCorrection qs Z' zsyns
+
+        // correct for X errors
+        let xsyns = syns.[3 .. 5]
+        singleErrorCorrection qs X' xsyns
 
 
     // program entry point
@@ -258,39 +267,57 @@ module Script =                     // The script module allows for incremental 
     let QECC()    =
         let k = Ket(12)
         let qs = k.Qubits
+        let mutable num = 0
 
+        for i in 1 .. 20 do
+            // prepare a |0>_L state
+            let mutable count = 0
+            let mutable attempt = 0
+            let stabs = [IIIXXXX; IXXIIXX; XIXIXIX; IIIZZZZ; IZZIIZZ; ZIZIZIZ; ZZZIIII]
 
-        // prepare a |0>_L state
-        let mutable count = 0
-        let mutable attempt = 0
-        let stabs = [IIIXXXX; IXXIIXX; XIXIXIX; IIIZZZZ; IZZIIZZ; ZIZIZIZ; ZZZIIII]
+            while (count < stabs.Length) do
+                attempt <- attempt + 1
+                //show "Attempt %d" attempt
+                resetQubits qs
+                let ancilla = qs.[7 .. qs.Length - 1]
+                count <- 0
+                for i in 0 .. stabs.Length - 1 do
+                    let stabMeasurement = stabs.[i]
+                    initAncilla ancilla
+                    stabMeasurement qs
+                    let ancillaOut = checkAncilla ancilla
+                    if (ancillaOut) then
+                        count <- count + 1
+                //show "Count is %d" count
+(*
+            H' >< qs.[0 .. 6]
+            let syns = syndromes qs qs.[7 .. qs.Length - 1]
+            errorCorrection qs syns
 
-        while (count < stabs.Length) do
-            attempt <- attempt + 1
-            show "Attempt %d" attempt
-            resetQubits qs
-            let ancilla = qs.[7 .. qs.Length - 1]
-            count <- 0
-            for i in 0 .. stabs.Length - 1 do
-                let stabMeasurement = stabs.[i]
-                initAncilla ancilla
-                stabMeasurement qs
-                let ancillaOut = checkAncilla ancilla
-                if (ancillaOut) then
-                    count <- count + 1
-            show "Count is %d" count
+            S' >< qs.[0 .. 6]
+*)            
+            let syns = syndromes qs qs.[7 .. qs.Length - 1]
+            errorCorrection qs syns
 
-        show "State is %s" (k.ToString())
+            M' >< qs.[0 .. 6]
+            let mutable parity = 0
+            for i in 0 .. qs.Length - 1 do
+                if (qs.[i].Bit.v = 1) then
+                    parity <- parity + 1
 
-        H' >< qs.[0 .. 6]
+            show "Measurement outcome %d" (parity % 2)
+            num <- num + (parity % 2)
+        
+        show "Number of ones %d" num
 
+ //       show "State is %s" (k.ToString())
+(*
         let syns = syndromes qs qs.[7 .. qs.Length - 1]
         printf "Syndromes: "
         for syn in syns do
             printf "%b " syn
         printf "\n"
-
-        show "State is %s" (k.ToString())
+*)
 
 #if INTERACTIVE
 do Script.QECC()        // If interactive, then run the routine automatically
