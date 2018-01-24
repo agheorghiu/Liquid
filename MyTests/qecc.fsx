@@ -197,20 +197,68 @@ module Script =                     // The script module allows for incremental 
                 loop <- false
 
     // stabilizer measurement and resetting of ancilla
-    let checkAndReset (qs:Qubits) =
+    let checkAncilla (qs:Qubits) =
         let mutable parity = 0
         for i in 0 .. qs.Length - 1 do
             if (qs.[i].Bit.v = 1) then
                 parity <- parity + 1
-        resetQubits qs
         ((parity % 2) = 0)
+
+    // perform syndrome extraction
+    let syndromes (qs:Qubits) (ancilla:Qubits) =
+        let stabs = [IIIXXXX; IXXIIXX; XIXIXIX; IIIZZZZ; IZZIIZZ; ZIZIZIZ]
+        let mutable syns = []
+
+        for stab in stabs do
+            initAncilla ancilla
+            stab qs
+            let ancillaOut = checkAncilla ancilla
+            syns <- syns @ [ancillaOut]
+
+        syns
+
+    // function to correct for a single type of error (either X or Z) based on syndromes for that type of error
+    let singleErrorCorrection (qs:Qubits) (corr: Qubits -> unit) (syndromes:List<bool>) =
+        let syn1 = syndromes.[0]
+        let syn2 = syndromes.[1]
+        let syn3 = syndromes.[2]
+        
+        // syndrome is 000 -> correction on qubit 6
+        if (not(syn1) && not(syn2) && not(syn3)) then
+            corr [qs.[6]]
+
+        // syndrome is 001 -> correction on qubit 5
+        if (not(syn1) && not(syn2) && syn3) then
+            corr [qs.[5]]
+
+        // syndrome is 010 -> correction on qubit 4
+        if (not(syn1) && syn2 && not(syn3)) then
+            corr [qs.[4]]
+
+        // syndrome is 011 -> correction on qubit 3
+        if (not(syn1) && syn2 && syn3) then
+            corr [qs.[3]]
+
+        // syndrome is 100 -> correction on qubit 2
+        if (syn1 && not(syn2) && not(syn3)) then
+            corr [qs.[2]]
+
+        // syndrome is 101 -> correction on qubit 1
+        if (syn1 && not(syn2) && syn3) then
+            corr [qs.[1]]
+
+        // syndrome is 110 -> correction on qubit 0
+        if (syn1 && syn2 && not(syn3)) then
+            corr [qs.[0]]
+
 
 
     // program entry point
     [<LQD>]
     let QECC()    =
-        let k = Ket(5)
+        let k = Ket(12)
         let qs = k.Qubits
+
 
         // prepare a |0>_L state
         let mutable count = 0
@@ -220,19 +268,29 @@ module Script =                     // The script module allows for incremental 
         while (count < stabs.Length) do
             attempt <- attempt + 1
             show "Attempt %d" attempt
-            let qs = k.Reset(12)
+            resetQubits qs
             let ancilla = qs.[7 .. qs.Length - 1]
             count <- 0
             for i in 0 .. stabs.Length - 1 do
                 let stabMeasurement = stabs.[i]
                 initAncilla ancilla
                 stabMeasurement qs
-                let ancillaOut = checkAndReset ancilla
+                let ancillaOut = checkAncilla ancilla
                 if (ancillaOut) then
                     count <- count + 1
             show "Count is %d" count
 
-        show "State is %s" (k.ToString())                        
+        show "State is %s" (k.ToString())
+
+        H' >< qs.[0 .. 6]
+
+        let syns = syndromes qs qs.[7 .. qs.Length - 1]
+        printf "Syndromes: "
+        for syn in syns do
+            printf "%b " syn
+        printf "\n"
+
+        show "State is %s" (k.ToString())
 
 #if INTERACTIVE
 do Script.QECC()        // If interactive, then run the routine automatically
