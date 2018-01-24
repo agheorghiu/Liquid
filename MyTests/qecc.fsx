@@ -17,7 +17,7 @@ module Script =                     // The script module allows for incremental 
 
 
     // p value for depolarization channels
-    let p = 0.01
+    let p = 0.00001
 
     // single qubit depolarization channel
     let depolarize (p:double) (qs:Qubits) =
@@ -59,6 +59,10 @@ module Script =                     // The script module allows for incremental 
 
     let S' (qs:Qubits) =
         S qs
+        depolarize p qs
+
+    let T' (qs:Qubits) =
+        T qs
         depolarize p qs
 
     let M' (qs:Qubits) =
@@ -269,7 +273,7 @@ module Script =                     // The script module allows for incremental 
         let qs = k.Qubits
         let mutable num = 0
 
-        for i in 1 .. 20 do
+        for i in 1 .. 100 do
             // prepare a |0>_L state
             let mutable count = 0
             let mutable attempt = 0
@@ -289,13 +293,12 @@ module Script =                     // The script module allows for incremental 
                     if (ancillaOut) then
                         count <- count + 1
                 //show "Count is %d" count
-(*
+
             H' >< qs.[0 .. 6]
             let syns = syndromes qs qs.[7 .. qs.Length - 1]
             errorCorrection qs syns
 
-            S' >< qs.[0 .. 6]
-*)            
+            S' >< qs.[0 .. 6]            
             let syns = syndromes qs qs.[7 .. qs.Length - 1]
             errorCorrection qs syns
 
