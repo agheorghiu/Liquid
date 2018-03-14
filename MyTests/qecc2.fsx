@@ -15,9 +15,41 @@ open Tests                          // Just gets us the RenderTest call for dump
 
 module Script =                     // The script module allows for incremental loading
 
+    let rotX (theta:float) (qs:Qubits) =
+        let gate (theta:float) =
+            let nam     = "Rx" + theta.ToString("F2")
+            new Gate(
+                Name    = nam,
+                Help    = sprintf "Rotate in X by: %f" theta,
+                Mat     = (
+                    let phi     = theta / 2.0
+                    let c       = Math.Cos phi
+                    let s       = Math.Sin phi
+                    CSMat(2,[0,0,c,0.;0,1,0.,s;1,0,0.,s;1,1,c,0.])),
+                Draw    = "\\gate{" + nam + "}"
+                )
+        (gate theta).Run qs
+
+
+    let prepFK (qs:Qubits) =
+        let gate =
+            let nam     = "Simple FK state"
+            new Gate(
+                Name    = nam,
+                Help    = sprintf "Prep FK state",
+                Mat     = (
+                    let sq3     = 1. / Math.Sqrt(3.)
+                    let c       = Math.Cos (Math.PI/8.)
+                    let s       = Math.Sin (Math.PI/8.)
+                    CSMat(8,[0,0,sq3,0.;3,0,s * sq3,0.;6,0,sq3,0.;7,0,c * sq3,0.])),
+                Draw    = "\\gate{" + nam + "}"
+                )
+        gate.Run qs
+
+
 
     // p value for depolarization channels
-    let p = 0.00001
+    let p = 0.1
 
     // single qubit depolarization channel
     let depolarize (p:double) (qs:Qubits) =
@@ -308,6 +340,29 @@ module Script =                     // The script module allows for incremental 
         
         show "Number of ones %d" num
         
+
+    let encode (qs:Qubits) (idx:List<int>) =
+        // first layer
+        H >< [qs.[idx.[4]]; qs.[idx.[5]]; qs.[idx.[6]]]
+        CNOT [qs.[idx.[0]]; qs.[idx.[1]];]
+        CNOT [qs.[idx.[0]]; qs.[idx.[2]];]
+
+        // second layer
+        CNOT [qs.[idx.[6]]; qs.[idx.[3]]]
+        CNOT [qs.[idx.[6]]; qs.[idx.[1]]]
+        CNOT [qs.[idx.[6]]; qs.[idx.[0]]]        
+
+        // third layer
+        CNOT [qs.[idx.[5]]; qs.[idx.[3]]]
+        CNOT [qs.[idx.[5]]; qs.[idx.[2]]]
+        CNOT [qs.[idx.[5]]; qs.[idx.[0]]]        
+
+        // fourth layer
+        CNOT [qs.[idx.[4]]; qs.[idx.[3]]]
+        CNOT [qs.[idx.[4]]; qs.[idx.[2]]]
+        CNOT [qs.[idx.[4]]; qs.[idx.[1]]]        
+        
+
     let ex (qs:Qubits) =
 //        for i in 1 .. 100 do
 //            resetQubits qs
@@ -319,62 +374,55 @@ module Script =                     // The script module allows for incremental 
     // program entry point
     [<LQD>]
     let QECC()    =
-        let k = Ket(12)
-        let qs = k.Qubits
-
-        for i in 1 .. 100 do
-            let qs = k.Reset()
-            let qcirc = Circuit.Compile ex qs            
-            let stab = Stabilizer(qcirc, k)
-            stab.Run()
-            let _, b = stab.[0]
-            show "Measurement outcome %d" b.v
-
-
 (*
-        let qs = k.Qubits
-        let mutable num = 0
+        let k = Ket(3)
+        let n = 10000
+        let mutable stats = 0
+        let rand = System.Random()
 
-        for i in 1 .. 100 do
-            // prepare a |0>_L state
-            let mutable count = 0
-            let mutable attempt = 0
-            let stabs = [IIIXXXX; IXXIIXX; XIXIXIX; IIIZZZZ; IZZIIZZ; ZIZIZIZ; ZZZIIII]
+        for run in 1 .. n do
+            let qs = k.Reset()
 
-            while (count < stabs.Length) do
-                attempt <- attempt + 1
-                //show "Attempt %d" attempt
-                resetQubits qs
-                let ancilla = qs.[7 .. qs.Length - 1]
-                count <- 0
-                for i in 0 .. stabs.Length - 1 do
-                    let stabMeasurement = stabs.[i]
-                    initAncilla ancilla
-                    stabMeasurement qs
-                    let ancillaOut = checkAncilla ancilla
-                    if (ancillaOut) then
-                        count <- count + 1
-                //show "Count is %d" count
+            prepFK qs
 
-            H' >< qs.[0 .. 6]
-            let syns = syndromes qs qs.[7 .. qs.Length - 1]
-            errorCorrection qs syns
+            let idx = 0
+            let mutable res = 0
+            M [qs.[idx]]
+            show "Run %d, outcome %d" run (qs.[idx].Bit.v)
 
-            S' >< qs.[0 .. 6]            
-            let syns = syndromes qs qs.[7 .. qs.Length - 1]
-            errorCorrection qs syns
+            stats <- stats + qs.[idx].Bit.v
 
-            M' >< qs.[0 .. 6]
-            let mutable parity = 0
-            for i in 0 .. qs.Length - 1 do
-                if (qs.[i].Bit.v = 1) then
-                    parity <- parity + 1
-
-            show "Measurement outcome %d" (parity % 2)
-            num <- num + (parity % 2)
-        
-        show "Number of ones %d" num
+        show "1 outcomes: %d" stats
 *)
+
+        let k = Ket(21)
+        let n = 100
+        let mutable stats = 0
+        let rand = System.Random()
+
+        for run in 1 .. n do
+            let qs = k.Reset()
+
+            prepFK [qs.[0]; qs.[7]; qs.[14]]
+            encode qs [0 .. 6]
+            encode qs [7 .. 13]
+            encode qs [14 .. 20]
+
+            for i in 0 .. (qs.Length - 1) do
+                depolarize p [qs.[i]]
+
+            let idx = 0
+
+            let mutable res = 0
+            M >< qs.[(idx * 7) .. (idx * 7 + 6)]
+            for i in (idx * 7) .. (idx * 7 + 6) do
+                res <- res + qs.[i].Bit.v
+
+            show "Run %d, outcome %d" run (res % 2)                
+
+            stats <- stats + (res % 2)
+
+        show "1 outcomes: %d" stats
 
 #if INTERACTIVE
 do Script.QECC()        // If interactive, then run the routine automatically
